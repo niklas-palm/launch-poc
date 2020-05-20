@@ -1,31 +1,64 @@
-import React from "react";
-import Amplify from "aws-amplify";
+import React, { useState, useEffect } from "react";
+import Amplify, { Auth } from "aws-amplify";
 import awsconfig from "./aws-exports";
-import logo from "./logo.svg";
 import "./App.css";
 import "@aws-amplify/ui/dist/style.css"; // Styles for login component
 
 import { withAuthenticator } from "aws-amplify-react";
 
-Amplify.configure(awsconfig);
+import Map from "./Map";
+var awsIot = require("aws-iot-device-sdk");
 
+Amplify.configure(awsconfig);
 function App() {
+  const [cats, setCats] = useState([]);
+
+  useEffect(() => {
+    const getCreds = async () => {
+      const res = await Auth.currentCredentials();
+
+      var params = {
+        region: "eu-west-1",
+        protocol: "wss",
+        host: "aaf06f4knyeat-ats.iot.eu-west-1.amazonaws.com",
+      };
+
+      params.accessKeyId = res.accessKeyId;
+      params.secretKey = res.secretAccessKey;
+      params.clientId = res.identityId;
+      params.sessionToken = res.sessionToken;
+
+      const client = awsIot.device(params);
+
+      client.on("connect", function () {
+        client.subscribe("coordinates");
+      });
+
+      client.on("message", function (topic, payload) {
+        if (topic === "coordinates") {
+          handleGeoReceive(payload.toString());
+        }
+      });
+    };
+    getCreds();
+  }, []);
+
+  const handleGeoReceive = (cat) => {
+    cat = JSON.parse(cat);
+
+    setCats((prevState) => {
+      return {
+        ...prevState,
+        ...{
+          [cat.CatID]: { lng: cat.long, lat: cat.lat },
+        },
+      };
+    });
+  };
+
   return (
     <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
+      <Map cats={cats} />
     </div>
   );
 }
@@ -34,6 +67,6 @@ export default withAuthenticator(App, {
   usernameAttributes: "email",
   includeGreetings: true, // This adds the header, letting you sign out.
   signUpConfig: {
-    hiddenDefaults: ["phone_number"]
-  }
+    hiddenDefaults: ["phone_number"],
+  },
 });
